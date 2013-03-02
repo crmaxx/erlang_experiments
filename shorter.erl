@@ -30,7 +30,14 @@ loop(State) ->
 	io:format("wait for messages ~n"),
 	receive
 		{short, LongUrl} -> 
-			%% some
+			Res =
+				case dict:is_key(LongUrl, State) of
+					true ->
+						dict:fetch(LongUrl);
+					false ->
+						"http://short.by/" ++ rand_str(7)
+				end,
+			io:format("Res ~p~n", [Res]),
 			loop(State);
 		{long, ShortUrl} -> 
 			%% do something
@@ -43,11 +50,11 @@ loop(State) ->
 	end.
 
 %% Internal methods
-rand_string() ->
-	L = list:seq(l, Length),
-	list:flatten([rand_char() || _Index <- L]),
+rand_str(Length) ->
+	L = lists:seq(1, Length),
+	lists:flatten([rand_char() || _Index <- L]).
 
 rand_char() ->
 	Chars = "qwertyuiopasdfghjklzxcvbnm",
 	Index = random:uniform(length(Chars)),
-	list:nth(Index, Chars).
+	lists:nth(Index, Chars).
