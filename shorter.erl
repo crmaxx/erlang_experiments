@@ -1,7 +1,6 @@
 -module(shorter).
 
--export([start/0, stop/0, short/1, long/1]).
--export([rand_char/0, rand_str/1]).
+-export([start/0, stop/0, restart/0, short/1, long/1]).
 
 %% API methods
 start() ->
@@ -15,41 +14,63 @@ stop() ->
 	shorter_server ! stop,
 	ok.
 
+restart() ->
+	stop(),
+	start().
+
 short(LongUrl) ->
 	io:format("short for ~p called ~n", [LongUrl]),
-	shorter_server ! {short, LongUrl},
-	ok.
+	Unique = make_ref(),
+	shorter_server ! {short, LongUrl, self(), Unique},
+	receive
+		{Unique, Ans} -> Ans
+	end.
 
 long(ShortUrl) ->
 	io:format("long for ~p called ~n", [ShortUrl]),
-	shorter_server ! {long, ShortUrl},
-	ok.
+	Unique = make_ref(),
+	shorter_server ! {long, ShortUrl, self(), Unique},
+	receive
+		{Unique, Ans} -> Ans
+	end.
 
 %% Main Loop
 loop(State) ->
-	io:format("wait for messages ~n"),
+	io:format("~p wait for messages ~n", [self()]),
 	receive
-		{short, LongUrl} -> 
-			Res =
+		%% awaiting incoming LongUrl
+		{short, LongUrl, From, Unique} -> 
+			{Res, NewState} =
 				case dict:is_key(LongUrl, State) of
 					true ->
-						dict:fetch(LongUrl);
+						{dict:fetch(LongUrl, State), State};
 					false ->
-						"http://short.by/" ++ rand_str(7)
+						ShortUrl = "http://short.by/" ++ rand_str(7),
+						{ShortUrl, dict:store(LongUrl, ShortUrl, State)}
 				end,
-			io:format("Res ~p~n", [Res]),
+			From ! {Unique, Res},
+			loop(NewState);
+		%% awaiting incoming LongUrl
+		{long, ShortUrl, From, Unique} -> 
+			FDict = dict:filter(fun(_Key, Value) -> Value =:= ShortUrl end, State),
+			FList = dict:to_list(FDict),
+			Res =
+				case FList of
+					[] -> "";
+					[{Ans, _Value} | _Tail] -> Ans
+				end, 
+			From ! {Unique, Res},
 			loop(State);
-		{long, ShortUrl} -> 
-			%% do something
-			loop(State);
+		%% awaiting stop-message
 		stop -> 
 			ok;
+		%% all others messages - error
 		Msg -> 
 			io:format("error: unknown message ~p~n", [Msg]),
 			loop(State)
 	end.
 
-%% Internal methods
+%% Private methods
 rand_str(Length) ->
 	L = lists:seq(1, Length),
 	lists:flatten([rand_char() || _Index <- L]).
